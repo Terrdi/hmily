@@ -17,13 +17,17 @@
 
 package org.dromara.hmily.repository.spi;
 
-import java.util.Date;
-import java.util.List;
+import org.dromara.hmily.repository.spi.entity.HmilyLock;
 import org.dromara.hmily.repository.spi.entity.HmilyParticipant;
 import org.dromara.hmily.repository.spi.entity.HmilyParticipantUndo;
 import org.dromara.hmily.repository.spi.entity.HmilyTransaction;
 import org.dromara.hmily.repository.spi.exception.HmilyRepositoryException;
 import org.dromara.hmily.serializer.spi.HmilySerializer;
+
+import java.util.Collection;
+import java.util.Date;
+import java.util.List;
+import java.util.Optional;
 
 /**
  * The interface Hmily repository.
@@ -234,4 +238,27 @@ public interface HmilyRepository {
      */
     int updateHmilyParticipantUndoStatus(Long undoId, Integer status);
     
+    /**
+     * Write hmily locks.
+     *
+     * @param locks locks
+     * @return count of writable locks
+     */
+    int writeHmilyLocks(Collection<HmilyLock> locks);
+    
+    /**
+     * Release hmily locks.
+     *
+     * @param locks locks
+     * @return count of release locks
+     */
+    int releaseHmilyLocks(Collection<HmilyLock> locks);
+    
+    /**
+     * Find hmily lock by id.
+     *
+     * @param lockId lock id
+     * @return hmily lock
+     */
+    Optional<HmilyLock> findHmilyLockById(String lockId);
 }

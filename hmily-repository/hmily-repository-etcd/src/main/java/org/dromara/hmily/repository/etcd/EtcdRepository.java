@@ -32,6 +32,7 @@ import org.dromara.hmily.config.api.ConfigEnv;
 import org.dromara.hmily.config.api.entity.HmilyEtcdConfig;
 import org.dromara.hmily.repository.spi.HmilyRepository;
 import org.dromara.hmily.repository.spi.HmilyRepositoryNode;
+import org.dromara.hmily.repository.spi.entity.HmilyLock;
 import org.dromara.hmily.repository.spi.entity.HmilyParticipant;
 import org.dromara.hmily.repository.spi.entity.HmilyParticipantUndo;
 import org.dromara.hmily.repository.spi.entity.HmilyTransaction;
@@ -41,9 +42,11 @@ import org.dromara.hmily.spi.HmilySPI;
 
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.Collections;
 import java.util.Date;
 import java.util.List;
+import java.util.Optional;
 import java.util.concurrent.ExecutionException;
 
 /**
@@ -398,7 +401,25 @@ public class EtcdRepository implements HmilyRepository {
         }
         return HmilyRepository.FAIL_ROWS;
     }
-
+    
+    @Override
+    public int writeHmilyLocks(final Collection<HmilyLock> locks) {
+        // TODO
+        return 0;
+    }
+    
+    @Override
+    public int releaseHmilyLocks(final Collection<HmilyLock> locks) {
+        // TODO
+        return 0;
+    }
+    
+    @Override
+    public Optional<HmilyLock> findHmilyLockById(final String lockId) {
+        // TODO
+        return Optional.empty();
+    }
+    
     private <T> List<T> listByFilter(final String path, final Class<T> deserializeClass, final Filter<T> filter, final Object... params) {
         try {
             GetOption option = GetOption.newBuilder().withPrefix(ByteSequence.from(path, StandardCharsets.UTF_8)).build();

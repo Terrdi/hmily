@@ -17,21 +17,9 @@
 
 package org.dromara.hmily.repository.database.manager;
 
+import com.google.common.base.Splitter;
 import com.google.common.collect.Maps;
 import com.zaxxer.hikari.HikariDataSource;
-import java.sql.Connection;
-import java.sql.PreparedStatement;
-import java.sql.ResultSet;
-import java.sql.ResultSetMetaData;
-import java.sql.SQLException;
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.Date;
-import java.util.List;
-import java.util.Map;
-import java.util.Objects;
-import java.util.stream.Collectors;
-import javax.sql.DataSource;
 import lombok.extern.slf4j.Slf4j;
 import org.dromara.hmily.common.exception.HmilyRuntimeException;
 import org.dromara.hmily.common.utils.CollectionUtils;
@@ -41,12 +29,31 @@ import org.dromara.hmily.config.api.entity.HmilyDatabaseConfig;
 import org.dromara.hmily.repository.spi.HmilyRepository;
 import org.dromara.hmily.repository.spi.entity.HmilyDataSnapshot;
 import org.dromara.hmily.repository.spi.entity.HmilyInvocation;
+import org.dromara.hmily.repository.spi.entity.HmilyLock;
 import org.dromara.hmily.repository.spi.entity.HmilyParticipant;
 import org.dromara.hmily.repository.spi.entity.HmilyParticipantUndo;
 import org.dromara.hmily.repository.spi.entity.HmilyTransaction;
 import org.dromara.hmily.repository.spi.exception.HmilyRepositoryException;
 import org.dromara.hmily.serializer.spi.HmilySerializer;
 import org.dromara.hmily.serializer.spi.exception.HmilySerializerException;
+
+import javax.sql.DataSource;
+import java.sql.Connection;
+import java.sql.PreparedStatement;
+import java.sql.ResultSet;
+import java.sql.ResultSetMetaData;
+import java.sql.SQLException;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Collection;
+import java.util.Collections;
+import java.util.Date;
+import java.util.LinkedList;
+import java.util.List;
+import java.util.Map;
+import java.util.Objects;
+import java.util.Optional;
+import java.util.stream.Collectors;
 
 /**
  * The type Abstract hmily database.
@@ -158,13 +165,13 @@ public abstract class AbstractHmilyDatabase implements HmilyRepository {
      * The constant INSERT_HMILY_PARTICIPANT_UNDO.
      */
     protected static final String INSERT_HMILY_PARTICIPANT_UNDO = "INSERT INTO hmily_participant_undo"
-            + "(undo_id, participant_id, trans_id, resource_id, undo_data_snapshot, status, create_time, update_time) "
+            + "(undo_id, participant_id, trans_id, resource_id, data_snapshot, status, create_time, update_time) "
             + " VALUES (?, ?, ?, ?, ?, ?, ?, ?)";
     
     /**
      * The constant SELECTOR_HMILY_PARTICIPANT_UNDO_WITH_PARTICIPANT_ID.
      */
-    protected static final String SELECTOR_HMILY_PARTICIPANT_UNDO_WITH_PARTICIPANT_ID = " select undo_id, participant_id, trans_id, resource_id, undo_data_snapshot, status "
+    protected static final String SELECTOR_HMILY_PARTICIPANT_UNDO_WITH_PARTICIPANT_ID = " select undo_id, participant_id, trans_id, resource_id, data_snapshot, status "
             + "from hmily_participant_undo where participant_id =? ";
     
     /**
@@ -181,6 +188,24 @@ public abstract class AbstractHmilyDatabase implements HmilyRepository {
      * The constant UPDATE_HMILY_PARTICIPANT_UNDO_STATUS.
      */
     protected static final String UPDATE_HMILY_PARTICIPANT_UNDO_STATUS = "update hmily_participant_undo set status=? where undo_id = ? ";
+    
+    /**
+     * The constant INSERT_HMILY_LOCK.
+     */
+    protected static final String INSERT_HMILY_LOCK = "INSERT INTO hmily_lock"
+        + "(trans_id, participant_id, resource_id, target_table_name, target_table_pk, create_time, update_time) "
+        + " VALUES (?, ?, ?, ?, ?, ?, ?)";
+    
+    /**
+     * The constant DELETE_HMILY_LOCK.
+     */
+    protected static final String DELETE_HMILY_LOCK = "delete from hmily_lock where resource_id = ? and target_table_name = ? and target_table_pk = ?";
+    
+    /**
+     * The constant SELECT_HMILY_LOCK_BY_PK.
+     */
+    protected static final String SELECT_HMILY_LOCK_BY_PK = " select trans_id, participant_id, resource_id, target_table_name, target_table_pk from hmily_lock where "
+        + "resource_id = ? and target_table_name = ? and target_table_pk = ?";
     
     /**
      * The data source.
@@ -447,6 +472,74 @@ public abstract class AbstractHmilyDatabase implements HmilyRepository {
         return executeUpdate(DELETE_HMILY_PARTICIPANT, participantId);
     }
     
+    @Override
+    public int writeHmilyLocks(final Collection<HmilyLock> locks) {
+        List<List<Object>> params = new LinkedList<>();
+        for (HmilyLock each : locks) {
+            List<Object> group = new LinkedList<>();
+            group.add(each.getTransId());
+            group.add(each.getParticipantId());
+            group.add(each.getResourceId());
+            group.add(each.getTargetTableName());
+            group.add(each.getTargetTablePk());
+            group.add(new Date());
+            group.add(new Date());
+            params.add(group);
+        }
+        return batchExecuteUpdate(INSERT_HMILY_LOCK, params);
+    }
+    
+    @Override
+    public int releaseHmilyLocks(final Collection<HmilyLock> locks) {
+        List<List<Object>> params = new LinkedList<>();
+        for (HmilyLock each : locks) {
+            List<Object> group = new LinkedList<>();
+            group.add(each.getResourceId());
+            group.add(each.getTargetTableName());
+            group.add(each.getTargetTablePk());
+            params.add(group);
+        }
+        return batchExecuteUpdate(DELETE_HMILY_LOCK, params);
+    }
+    
+    @Override
+    public Optional<HmilyLock> findHmilyLockById(final String lockId) {
+        List<Map<String, Object>> list = executeQuery(SELECT_HMILY_LOCK_BY_PK, Splitter.on(";;").splitToList(lockId).toArray());
+        if (CollectionUtils.isNotEmpty(list)) {
+            return list.stream().filter(Objects::nonNull).map(this::buildHmilyLockByResultMap).findFirst();
+        }
+        return Optional.empty();
+    }
+    
+    private int batchExecuteUpdate(final String sql, final List<List<Object>> params) {
+        try (Connection con = dataSource.getConnection()) {
+            con.setAutoCommit(false);
+            try (PreparedStatement ps = con.prepareStatement(sql)) {
+                for (List<Object> each : params) {
+                    int index = 1;
+                    for (Object param : each) {
+                        ps.setObject(index, param);
+                        index++;
+                    }
+                    ps.addBatch();
+                }
+                int[] count = ps.executeBatch();
+                if (params.size() != Arrays.stream(count).sum()) {
+                    con.rollback();
+                    return 0;
+                }
+                con.commit();
+                return params.size();
+            } catch (SQLException ex) {
+                con.rollback();
+                log.error("hmily jdbc batchExecuteUpdate repository exception -> ", ex);
+                return FAIL_ROWS;
+            }
+        } catch (SQLException ex) {
+            return FAIL_ROWS;
+        }
+    }
+    
     /**
      * Execute update int.
      *
@@ -553,5 +646,14 @@ public abstract class AbstractHmilyDatabase implements HmilyRepository {
         }
         hmilyParticipant.setVersion(Integer.parseInt((map.get("version")).toString()));
         return hmilyParticipant;
+    }
+    
+    private HmilyLock buildHmilyLockByResultMap(final Map<String, Object> map) {
+        Long transId = (Long) map.get("trans_id");
+        Long participantId = (Long) map.get("participant_id");
+        String resourceId = (String) map.get("resource_id");
+        String targetTableName = (String) map.get("target_table_name");
+        String targetTablePk = (String) map.get("target_table_pk");
+        return new HmilyLock(transId, participantId, resourceId, targetTableName, targetTablePk);
     }
 }

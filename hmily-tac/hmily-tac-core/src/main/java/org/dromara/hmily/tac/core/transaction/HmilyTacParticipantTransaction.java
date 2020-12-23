@@ -17,8 +17,6 @@
 
 package org.dromara.hmily.tac.core.transaction;
 
-import java.lang.reflect.Method;
-import java.util.List;
 import org.aspectj.lang.ProceedingJoinPoint;
 import org.aspectj.lang.reflect.MethodSignature;
 import org.dromara.hmily.annotation.TransTypeEnum;
@@ -38,8 +36,12 @@ import org.dromara.hmily.repository.spi.entity.HmilyInvocation;
 import org.dromara.hmily.repository.spi.entity.HmilyParticipant;
 import org.dromara.hmily.repository.spi.entity.HmilyParticipantUndo;
 import org.dromara.hmily.tac.core.cache.HmilyParticipantUndoCacheManager;
+import org.dromara.hmily.tac.core.lock.HmilyLockManager;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+
+import java.lang.reflect.Method;
+import java.util.List;
 
 /**
  * The type Hmily tac participant transaction.
@@ -97,7 +99,7 @@ public class HmilyTacParticipantTransaction {
                     for (HmilyParticipantUndo undo : undoList) {
                         boolean success = UndoHook.INSTANCE.run(undo);
                         if (success) {
-                            HmilyRepositoryStorage.removeHmilyParticipantUndo(undo);
+                            cleanUndo(undo);
                         }
                     }
                     cleanHmilyParticipant(participant);
@@ -113,7 +115,6 @@ public class HmilyTacParticipantTransaction {
             }
         }
     }
-    
     
     /**
      * Commit participant.
@@ -131,8 +132,7 @@ public class HmilyTacParticipantTransaction {
                     //do local
                     List<HmilyParticipantUndo> undoList = HmilyParticipantUndoCacheManager.getInstance().get(hmilyParticipant.getParticipantId());
                     for (HmilyParticipantUndo undo : undoList) {
-                        //clean undo
-                        HmilyRepositoryStorage.removeHmilyParticipantUndo(undo);
+                        cleanUndo(undo);
                     }
                     cleanHmilyParticipant(hmilyParticipant);
                 } else {
@@ -145,6 +145,12 @@ public class HmilyTacParticipantTransaction {
                 HmilyContextHolder.remove();
             }
         }
+    }
+    
+    private void cleanUndo(final HmilyParticipantUndo hmilyParticipantUndo) {
+        HmilyRepositoryStorage.removeHmilyParticipantUndo(hmilyParticipantUndo);
+        HmilyParticipantUndoCacheManager.getInstance().removeByKey(hmilyParticipantUndo.getParticipantId());
+        HmilyLockManager.INSTANCE.releaseLocks(hmilyParticipantUndo.getHmilyLocks());
     }
     
     private void cleanHmilyParticipant(final HmilyParticipant hmilyParticipant) {
